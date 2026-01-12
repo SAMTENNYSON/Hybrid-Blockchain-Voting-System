@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bio-Secure Blockchain Voting</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; color: #333; text-align: center; margin: 0; padding: 20px; }
+        h1 { color: #2c3e50; }
+        
+        /* Utility Classes */
+        .hidden { display: none !important; }
+        .card { background: white; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 20px; margin: 15px; display: inline-block; width: 220px; vertical-align: top; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-5px); }
+        
+        /* Buttons */
+        button { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; margin-top: 10px; }
+        button:hover { background: #2980b9; }
+        button:disabled { background: #bdc3c7; cursor: not-allowed; }
+        .login-btn { background: #27ae60; font-size: 1.2rem; padding: 15px 30px; width: auto; }
+        .login-btn:hover { background: #219150; }
+
+        /* Video Feed */
+        #video-container { position: relative; margin: 20px auto; width: 480px; height: 360px; background: #000; border-radius: 10px; overflow: hidden; border: 4px solid #34495e; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* Status Text */
+        #status-text { font-weight: bold; margin-top: 10px; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+
+    <h1>🗳️ Decentralized Secure Voting</h1>
+
+    <div id="login-section">
+        <div class="card" style="width: 500px;">
+            <h2>🔐 Voter Identification</h2>
+            <p>Please align your face with the camera to verify identity.</p>
+            
+            <div id="video-container">
+                <video id="video" autoplay muted></video>
+            </div>
+            
+            <button class="login-btn" onclick="startCamera()">📷 Start Face Scan</button>
+            <p id="status-text" style="color: #7f8c8d;">Camera is inactive</p>
+        </div>
+    </div>
+
+    <div id="voting-section" class="hidden">
+        <h2>✅ Identity Verified</h2>
+        <p>You are authorized to vote. Please select a candidate below.</p>
+        <div id="candidates-container">
+            <p>Loading Ballot...</p>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // PART 1: BIOMETRIC AUTHENTICATION LOGIC
+        // ==========================================
+        async function startCamera() {
+            const status = document.getElementById('status-text');
+            const btn = document.querySelector('.login-btn');
+            
+            btn.disabled = true;
+            status.innerText = "⏳ Loading AI Models...";
+            
+            // 1. Load Face Detection Model (Tiny Face Detector is fast & lightweight)
+            await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+            
+            status.innerText = "🎥 Starting Camera...";
+            
+            // 2. Access Webcam
+            const video = document.getElementById('video');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+                video.srcObject = stream;
+            } catch (err) {
+                status.innerText = "❌ Camera Error: " + err;
+                return;
+            }
+
+            // 3. Start Scanning for Faces
+            video.addEventListener('play', () => {
+                status.innerText = "🔍 Scanning Face...";
+                
+                const interval = setInterval(async () => {
+                    // Detect faces in the video stream
+                    const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+                    
+                    if (detections.length > 0) {
+                        // FACE DETECTED!
+                        clearInterval(interval);
+                        status.innerText = "✅ Face Verified! Access Granted.";
+                        status.style.color = "#27ae60";
+                        
+                        // Stop Camera to save battery/resources
+                        video.srcObject.getTracks().forEach(track => track.stop());
+                        
+                        // Transition to Voting Screen
+                        setTimeout(() => {
+                            document.getElementById('login-section').classList.add('hidden');
+                            document.getElementById('voting-section').classList.remove('hidden');
+                            loadCandidates(); // Fetch data from Blockchain
+                        }, 1500);
+                    }
+                }, 500); // Check every 500ms
+            });
+        }
+
+        // ==========================================
+        // PART 2: BLOCKCHAIN & OFFLINE VOTING LOGIC
+        // ==========================================
+        
+        // Load candidates from Python Backend
+        async function loadCandidates() {
+            try {
+                const response = await fetch('/get_candidates');
+                const candidates = await response.json();
+                
+                const container = document.getElementById('candidates-container');
+                container.innerHTML = '';
+
+                candidates.forEach(c => {
+                    const div = document.createElement('div');
+                    div.className = 'card';
+                    div.innerHTML = `
+                        <h3>${c.name}</h3>
+                        <p style="color:#7f8c8d">Current Votes: <strong>${c.voteCount}</strong></p>
+                        <button onclick="handleVote(${c.id}, '${c.name}')">Vote for ${c.name}</button>
+                    `;
+                    container.appendChild(div);
+                });
+            } catch (e) {
+                document.getElementById('candidates-container').innerHTML = "<p>⚠️ Error connecting to Blockchain Node.</p>";
+            }
+        }
+
+        // Handle the Vote Click
+        async function handleVote(id, name) {
+            const voteData = { id: id, voter_address: "user_" + Math.random().toString(36).substring(7) };
+
+            if (navigator.onLine) {
+                // ONLINE: Send directly to server
+                await sendVoteToServer(voteData, name);
+            } else {
+                // OFFLINE: Save to Local Storage
+                saveVoteOffline(voteData, name);
+            }
+        }
+
+        // Send to Backend
+        async function sendVoteToServer(voteData, name) {
+            try {
+                const response = await fetch('/vote', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(voteData)
+                });
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert(`✅ Vote for ${name} Confirmed!\nTx Hash: ${result.hash}`);
+                    loadCandidates(); // Refresh UI
+                } else {
+                    alert("❌ Error: " + result.error);
+                }
+            } catch (error) {
+                // If fetch fails (server down), fallback to offline
+                saveVoteOffline(voteData, name);
+            }
+        }
+
+        // Offline Fallback
+        function saveVoteOffline(voteData, name) {
+            let offlineVotes = JSON.parse(localStorage.getItem('offline_votes') || "[]");
+            offlineVotes.push(voteData);
+            localStorage.setItem('offline_votes', JSON.stringify(offlineVotes));
+            
+            alert(`⚠️ Internet Lost! \nYour vote for ${name} is saved SECURELY on this device.\nIt will sync automatically when you reconnect.`);
+        }
+
+        // Auto-Sync Listener
+        window.addEventListener('online', async () => {
+            let offlineVotes = JSON.parse(localStorage.getItem('offline_votes') || "[]");
+            
+            if (offlineVotes.length > 0) {
+                console.log("🌐 Connection Restored. Syncing votes...");
+                
+                for (let vote of offlineVotes) {
+                    await fetch('/vote', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(vote)
+                    });
+                }
+                
+                localStorage.removeItem('offline_votes');
+                alert("✅ Connection Restored! \nAll offline votes have been synced to the Blockchain.");
+                loadCandidates();
+            }
+        });
+    </script>
+</body>
+</html>

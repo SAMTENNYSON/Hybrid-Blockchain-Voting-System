@@ -1,0 +1,13 @@
+# Ignore the Virtual Environment
+venv/
+env/
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# Ignore compiled contract data (it changes every time you deploy)
+contract_data.json
+
+# Ignore system files
+.DS_Store
