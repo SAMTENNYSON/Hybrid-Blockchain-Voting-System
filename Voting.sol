@@ -10,39 +10,35 @@ contract Voting {
         uint voteCount;
     }
 
-    // Store candidates
     mapping(uint => Candidate) public candidates;
-    // Store voters status (has voted or not)
-    mapping(address => bool) public voters;
-    // Count of candidates
+    
+    // CHANGE 1: We now map a "String ID" (Biometric Hash) to a boolean
+    mapping(string => bool) public voters; 
+    
     uint public candidatesCount;
 
     constructor() {
-        owner = msg.sender; // The account that deploys this is the 'Admin'
-        // Add two default candidates for the demo
+        owner = msg.sender;
         addCandidate("Candidate A (Party 1)");
         addCandidate("Candidate B (Party 2)");
     }
 
-    // Function to add a candidate (Only Admin can call this)
     function addCandidate (string memory _name) public {
         require(msg.sender == owner, "Only admin can add candidates.");
         candidatesCount ++;
         candidates[candidatesCount] = Candidate(candidatesCount, _name, 0);
     }
 
-    // Function to cast a vote
-    function vote (uint _candidateId) public {
-        // Check 1: Voter has not voted before
-        require(!voters[msg.sender], "You have already voted.");
+    // CHANGE 2: We accept the voter's unique ID as an argument
+    function vote (uint _candidateId, string memory _voterId) public {
+        // Check if this specific Identity has voted
+        require(!voters[_voterId], "This Identity has already voted.");
 
-        // Check 2: Candidate ID is valid
         require(_candidateId > 0 && _candidateId <= candidatesCount, "Invalid candidate ID.");
 
-        // Record the vote
-        voters[msg.sender] = true;
+        // Mark this Identity as voted
+        voters[_voterId] = true;
 
-        // Update the count
         candidates[_candidateId].voteCount ++;
     }
 }

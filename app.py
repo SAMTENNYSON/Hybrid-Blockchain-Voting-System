@@ -10,7 +10,7 @@ app = Flask(__name__)
 # 1. Blockchain Config
 ganache_url = "http://127.0.0.1:7545"
 w3 = Web3(Web3.HTTPProvider(ganache_url))
-my_address = "YOUR_GANACHE_ADDRESS_HERE" 
+my_address = "YOUR_GANACHE_ADDRESS_HERE"
 private_key = "YOUR_PRIVATE_KEY_HERE"
 
 # 2. Cloud Config (Supabase)
@@ -45,7 +45,7 @@ def vote():
     try:
         # A. BLOCKCHAIN TRANSACTION (The Secure Vote)
         nonce = w3.eth.get_transaction_count(my_address)
-        txn = contract.functions.vote(c_id).build_transaction({
+        txn = contract.functions.vote(c_id, v_addr).build_transaction({
             'chainId': 1337,
             'gas': 2000000,
             'gasPrice': w3.eth.gas_price,
@@ -84,6 +84,16 @@ def vote():
         except:
             pass
             
+        return jsonify({"error": str(e)}), 400
+    
+@app.route("/check_status/<voter_id>", methods=["GET"])
+def check_status(voter_id):
+    try:
+        # Call the Smart Contract 'voters' mapping
+        # Returns True if voted, False if not
+        has_voted = contract.functions.voters(voter_id).call()
+        return jsonify({"has_voted": has_voted}), 200
+    except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":

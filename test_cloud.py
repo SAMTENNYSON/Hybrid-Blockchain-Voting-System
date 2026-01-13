@@ -15,7 +15,7 @@ try:
     current_time = datetime.datetime.now().isoformat()
     
     data = {
-        "created_at": current_time,  # <--- NEW LINE
+        "created_at": current_time,
         "voter_hash": "TEST_USER_123", 
         "candidate_id": 99, 
         "status": "Cloud Test Successful"

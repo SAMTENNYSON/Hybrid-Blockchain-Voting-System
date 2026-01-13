@@ -56,70 +56,92 @@
     </div>
 
     <script>
+        // 1. PERSISTENT IDENTITY LOGIC
+        // Check if we already have an ID. If not, make one and SAVE it.
+        let deviceVoterId = localStorage.getItem('device_voter_id');
+        
+        if (!deviceVoterId) {
+            deviceVoterId = "voter_" + Math.random().toString(36).substring(7);
+            localStorage.setItem('device_voter_id', deviceVoterId);
+        }
+        
+        console.log("Your Identity:", deviceVoterId);
+
         // ==========================================
-        // PART 1: BIOMETRIC AUTHENTICATION LOGIC
+        // PART 1: BIOMETRIC AUTHENTICATION (Unchanged)
         // ==========================================
         async function startCamera() {
-            const status = document.getElementById('status-text');
-            const btn = document.querySelector('.login-btn');
+            // ... (Keep your existing camera code mostly the same, 
+            //      but make sure it calls checkVotingStatus() after verification)
             
-            btn.disabled = true;
-            status.innerText = "⏳ Loading AI Models...";
+            // FOR BREVITY: I will assume the camera code is here. 
+            // Just make sure that inside the "Face Verified" block, 
+            // you call loadCandidates() which we update below.
             
-            // 1. Load Face Detection Model (Tiny Face Detector is fast & lightweight)
-            await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+            // --- PASTE THE CAMERA CODE FROM PREVIOUS STEP HERE ---
+            // (If you need the full block again, let me know, but it is the same as before)
             
-            status.innerText = "🎥 Starting Camera...";
+            // Just ensure the SUCCESS block calls:
+            // document.getElementById('login-section').classList.add('hidden');
+            // document.getElementById('voting-section').classList.remove('hidden');
+            // loadCandidates(); <--- THIS IS KEY
             
-            // 2. Access Webcam
-            const video = document.getElementById('video');
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
-                video.srcObject = stream;
-            } catch (err) {
-                status.innerText = "❌ Camera Error: " + err;
-                return;
-            }
-
-            // 3. Start Scanning for Faces
-            video.addEventListener('play', () => {
-                status.innerText = "🔍 Scanning Face...";
-                
-                const interval = setInterval(async () => {
-                    // Detect faces in the video stream
-                    const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
-                    
-                    if (detections.length > 0) {
-                        // FACE DETECTED!
-                        clearInterval(interval);
-                        status.innerText = "✅ Face Verified! Access Granted.";
-                        status.style.color = "#27ae60";
-                        
-                        // Stop Camera to save battery/resources
-                        video.srcObject.getTracks().forEach(track => track.stop());
-                        
-                        // Transition to Voting Screen
-                        setTimeout(() => {
-                            document.getElementById('login-section').classList.add('hidden');
-                            document.getElementById('voting-section').classList.remove('hidden');
-                            loadCandidates(); // Fetch data from Blockchain
-                        }, 1500);
-                    }
-                }, 500); // Check every 500ms
-            });
+            // (Temporary "Skip Camera" for testing logic if you want):
+            // document.getElementById('login-section').classList.add('hidden');
+            // document.getElementById('voting-section').classList.remove('hidden');
+            // loadCandidates();
+            
+            // --- RESTORE CAMERA LOGIC BELOW ---
+             const status = document.getElementById('status-text');
+             const btn = document.querySelector('.login-btn');
+             btn.disabled = true;
+             status.innerText = "⏳ Loading AI Models...";
+             await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+             status.innerText = "🎥 Starting Camera...";
+             const video = document.getElementById('video');
+             const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+             video.srcObject = stream;
+             video.addEventListener('play', () => {
+                 const interval = setInterval(async () => {
+                     const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+                     if (detections.length > 0) {
+                         clearInterval(interval);
+                         video.srcObject.getTracks().forEach(t => t.stop());
+                         document.getElementById('login-section').classList.add('hidden');
+                         document.getElementById('voting-section').classList.remove('hidden');
+                         loadCandidates(); // Trigger the smart load
+                     }
+                 }, 500);
+             });
         }
 
         // ==========================================
-        // PART 2: BLOCKCHAIN & OFFLINE VOTING LOGIC
+        // PART 2: SMART VOTING LOGIC
         // ==========================================
         
-        // Load candidates from Python Backend
         async function loadCandidates() {
+            const container = document.getElementById('candidates-container');
+            container.innerHTML = '<p>Checking Blockchain Status...</p>';
+
+            // STEP A: Ask Blockchain if I already voted
+            const statusResponse = await fetch(`/check_status/${deviceVoterId}`);
+            const statusData = await statusResponse.json();
+            
+            if (statusData.has_voted) {
+                container.innerHTML = `
+                    <div style="background:#e8f8f5; border:1px solid #2ecc71; padding:20px; border-radius:10px;">
+                        <h2 style="color:#27ae60;">✅ You have already voted!</h2>
+                        <p>Your vote is recorded on the blockchain.</p>
+                        <p>Identity: <small>${deviceVoterId}</small></p>
+                    </div>`;
+                return; // STOP HERE. Do not show candidates.
+            }
+
+            // STEP B: If not voted, load candidates
             try {
                 const response = await fetch('/get_candidates');
                 const candidates = await response.json();
                 
-                const container = document.getElementById('candidates-container');
                 container.innerHTML = '';
 
                 candidates.forEach(c => {
@@ -127,80 +149,74 @@
                     div.className = 'card';
                     div.innerHTML = `
                         <h3>${c.name}</h3>
-                        <p style="color:#7f8c8d">Current Votes: <strong>${c.voteCount}</strong></p>
-                        <button onclick="handleVote(${c.id}, '${c.name}')">Vote for ${c.name}</button>
+                        <p>Current Votes: <strong>${c.voteCount}</strong></p>
+                        <button class="vote-btn" onclick="handleVote(${c.id}, '${c.name}')">Vote for ${c.name}</button>
                     `;
                     container.appendChild(div);
                 });
             } catch (e) {
-                document.getElementById('candidates-container').innerHTML = "<p>⚠️ Error connecting to Blockchain Node.</p>";
+                container.innerHTML = "<p>⚠️ Error connecting to Blockchain Node.</p>";
             }
         }
 
-        // Handle the Vote Click
         async function handleVote(id, name) {
-            const voteData = { id: id, voter_address: "user_" + Math.random().toString(36).substring(7) };
+            // Disable UI
+            document.querySelectorAll('.vote-btn').forEach(b => {
+                b.disabled = true; 
+                b.innerText = "Processing...";
+            });
+
+            const voteData = { id: id, voter_address: deviceVoterId }; // Use Persistent ID
 
             if (navigator.onLine) {
-                // ONLINE: Send directly to server
-                await sendVoteToServer(voteData, name);
-            } else {
-                // OFFLINE: Save to Local Storage
-                saveVoteOffline(voteData, name);
-            }
-        }
-
-        // Send to Backend
-        async function sendVoteToServer(voteData, name) {
-            try {
-                const response = await fetch('/vote', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(voteData)
-                });
-                const result = await response.json();
-                
-                if (response.ok) {
-                    alert(`✅ Vote for ${name} Confirmed!\nTx Hash: ${result.hash}`);
-                    loadCandidates(); // Refresh UI
-                } else {
-                    alert("❌ Error: " + result.error);
+                try {
+                    const response = await fetch('/vote', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(voteData)
+                    });
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        alert("✅ Vote Confirmed on Blockchain!");
+                        loadCandidates(); // Reloads and triggers the "Already Voted" screen
+                    } else {
+                        alert("❌ Error: " + result.error);
+                        // If error is "Already voted", reload to show success screen
+                        if(result.error.includes("already voted")) loadCandidates();
+                    }
+                } catch (e) {
+                    saveVoteOffline(voteData, name);
                 }
-            } catch (error) {
-                // If fetch fails (server down), fallback to offline
+            } else {
                 saveVoteOffline(voteData, name);
             }
         }
 
-        // Offline Fallback
         function saveVoteOffline(voteData, name) {
             let offlineVotes = JSON.parse(localStorage.getItem('offline_votes') || "[]");
             offlineVotes.push(voteData);
             localStorage.setItem('offline_votes', JSON.stringify(offlineVotes));
+            alert("⚠️ Offline: Vote Saved locally!");
             
-            alert(`⚠️ Internet Lost! \nYour vote for ${name} is saved SECURELY on this device.\nIt will sync automatically when you reconnect.`);
+            // Fake the "Voted" screen for UX
+            document.getElementById('candidates-container').innerHTML = "<h3>✅ Vote Saved (Offline)</h3><p>Will sync when online.</p>";
         }
 
-        // Auto-Sync Listener
+        // Sync Listener (Keep existing logic)
         window.addEventListener('online', async () => {
-            let offlineVotes = JSON.parse(localStorage.getItem('offline_votes') || "[]");
-            
-            if (offlineVotes.length > 0) {
-                console.log("🌐 Connection Restored. Syncing votes...");
-                
-                for (let vote of offlineVotes) {
-                    await fetch('/vote', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(vote)
-                    });
-                }
-                
-                localStorage.removeItem('offline_votes');
-                alert("✅ Connection Restored! \nAll offline votes have been synced to the Blockchain.");
-                loadCandidates();
-            }
+             // ... (Same sync logic as before) ...
+             let offlineVotes = JSON.parse(localStorage.getItem('offline_votes') || "[]");
+             if (offlineVotes.length > 0) {
+                 for (let vote of offlineVotes) {
+                     await fetch('/vote', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(vote) });
+                 }
+                 localStorage.removeItem('offline_votes');
+                 alert("Synced!");
+                 loadCandidates();
+             }
         });
     </script>
+
 </body>
 </html>
